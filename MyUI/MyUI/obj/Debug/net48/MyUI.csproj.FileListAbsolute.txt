@@ -1,0 +1,29 @@
+B:\CMPT 415\MyUI\MyUI\bin\Debug\net48\MyUI.gha
+B:\CMPT 415\MyUI\MyUI\bin\Debug\net48\MyUI.pdb
+B:\CMPT 415\MyUI\MyUI\obj\Debug\net48\MyUI.csproj.AssemblyReference.cache
+B:\CMPT 415\MyUI\MyUI\obj\Debug\net48\MyUI.GeneratedMSBuildEditorConfig.editorconfig
+B:\CMPT 415\MyUI\MyUI\obj\Debug\net48\MyUI.AssemblyInfoInputs.cache
+B:\CMPT 415\MyUI\MyUI\obj\Debug\net48\MyUI.AssemblyInfo.cs
+B:\CMPT 415\MyUI\MyUI\obj\Debug\net48\MyUI.csproj.CoreCompileInputs.cache
+B:\CMPT 415\MyUI\MyUI\obj\Debug\net48\MyUI.gha
+B:\CMPT 415\MyUI\MyUI\obj\Debug\net48\MyUI.pdb
+F:\CMPT 415\MyUI-main\MyUI\MyUI\bin\Debug\net48\MyUI.gha
+F:\CMPT 415\MyUI-main\MyUI\MyUI\bin\Debug\net48\MyUI.pdb
+F:\CMPT 415\MyUI-main\MyUI\MyUI\obj\Debug\net48\MyUI.csproj.AssemblyReference.cache
+F:\CMPT 415\MyUI-main\MyUI\MyUI\obj\Debug\net48\MyUI.GeneratedMSBuildEditorConfig.editorconfig
+F:\CMPT 415\MyUI-main\MyUI\MyUI\obj\Debug\net48\MyUI.AssemblyInfoInputs.cache
+F:\CMPT 415\MyUI-main\MyUI\MyUI\obj\Debug\net48\MyUI.AssemblyInfo.cs
+F:\CMPT 415\MyUI-main\MyUI\MyUI\obj\Debug\net48\MyUI.csproj.CoreCompileInputs.cache
+F:\CMPT 415\MyUI-main\MyUI\MyUI\obj\Debug\net48\MyUI.gha
+F:\CMPT 415\MyUI-main\MyUI\MyUI\obj\Debug\net48\MyUI.pdb
+B:\CMPT 415\MyUI\MyUI\obj\Debug\net48\MyUI.sourcelink.json
+B:\SFU Study Materials\CMPT415\MyUI\MyUI\bin\Debug\net48\MyUI.gha
+B:\SFU Study Materials\CMPT415\MyUI\MyUI\bin\Debug\net48\MyUI.pdb
+B:\SFU Study Materials\CMPT415\MyUI\MyUI\obj\Debug\net48\MyUI.csproj.AssemblyReference.cache
+B:\SFU Study Materials\CMPT415\MyUI\MyUI\obj\Debug\net48\MyUI.GeneratedMSBuildEditorConfig.editorconfig
+B:\SFU Study Materials\CMPT415\MyUI\MyUI\obj\Debug\net48\MyUI.AssemblyInfoInputs.cache
+B:\SFU Study Materials\CMPT415\MyUI\MyUI\obj\Debug\net48\MyUI.AssemblyInfo.cs
+B:\SFU Study Materials\CMPT415\MyUI\MyUI\obj\Debug\net48\MyUI.csproj.CoreCompileInputs.cache
+B:\SFU Study Materials\CMPT415\MyUI\MyUI\obj\Debug\net48\MyUI.sourcelink.json
+B:\SFU Study Materials\CMPT415\MyUI\MyUI\obj\Debug\net48\MyUI.gha
+B:\SFU Study Materials\CMPT415\MyUI\MyUI\obj\Debug\net48\MyUI.pdb

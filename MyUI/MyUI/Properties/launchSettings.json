@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "MyUI": {
+      "commandName": "Executable",
+      "executablePath": "B:\\Rhinoceros\\System\\Rhino.exe",
+      "commandLineArgs": ""
+    }
+  }
+}

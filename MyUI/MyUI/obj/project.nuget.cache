@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "7Ug/GQBvLSGYwR0E0BLMb6g9oS5uV510tKo/V3GPzvjQ92gNOAxQj7Z9QHq357Szx6VlXVmVpHXdWNwJAuo2YQ==",
+  "success": true,
+  "projectFilePath": "B:\\SFU Study Materials\\CMPT415\\MyUI\\MyUI\\MyUI.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Zejia Cai\\.nuget\\packages\\grasshopper\\7.13.21348.13001\\grasshopper.7.13.21348.13001.nupkg.sha512",
+    "C:\\Users\\Zejia Cai\\.nuget\\packages\\rhinocommon\\7.13.21348.13001\\rhinocommon.7.13.21348.13001.nupkg.sha512"
+  ],
+  "logs": []
+}
