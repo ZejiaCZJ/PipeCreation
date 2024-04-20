@@ -13,6 +13,7 @@ using Rhino.Geometry.Intersect;
 using Rhino.Collections;
 using Rhino.DocObjects.Tables;
 using Rhino.UI;
+using System.Threading.Tasks;
 
 namespace MyUI
 {
@@ -71,8 +72,8 @@ namespace MyUI
         //This function get the distance with Manhattan distance
         public double GetDistance(double targetX, double targetY, double targetZ)
         {
-            return Math.Abs(targetX - X) + Math.Abs(targetY - Y) + Math.Abs(targetZ - Z);//Manhattan
-            //return Math.Sqrt(Math.Pow(targetX - X,2) + Math.Pow(targetY - Y,2) + Math.Pow(targetZ - Z,2)); //Euclidean
+            //return Math.Abs(targetX - X) + Math.Abs(targetY - Y) + Math.Abs(targetZ - Z);//Manhattan
+            return Math.Sqrt(Math.Pow(targetX - X,2) + Math.Pow(targetY - Y,2) + Math.Pow(targetZ - Z,2)); //Euclidean
         }
 
         public bool Equal(Voxel voxel)
@@ -315,7 +316,7 @@ namespace MyUI
             #endregion
 
             #region Delete current model and customized part bounding box
-            var allObjects = new List<RhinoObject>(myDoc.Objects.GetObjectList(ObjectType.AnyObject));
+            var allObjects = new List<RhinoObject>(myDoc.Objects.GetObjectList(ObjectType.Brep));
             foreach (var item in allObjects)
             {
                 Guid guid = item.Id;
@@ -398,7 +399,7 @@ namespace MyUI
             voxelSpace = new Voxel[w, l, h];
 
             #region Initialize the voxel space element-wise
-            for (int i = 0; i < w; i++)
+            Parallel.For(0, w, i =>
             {
                 for (int j = 0; j < l; j++)
                 {
@@ -451,9 +452,11 @@ namespace MyUI
                         }
                     }
                 }
-            }
+            });
             #endregion
         }
+
+
 
 
 
@@ -736,23 +739,31 @@ namespace MyUI
             //bestRoute_Point3d[0] = base_part_center;
             bestRoute_Point3d.Add(customized_part_center);
 
+            Parallel.For(0, bestRoute_Point3d.Count, i =>{
+                myDoc.Objects.AddPoint(bestRoute_Point3d[i]);
+            });
+
             //Test curve with less control points, if it's not causing intersection, then return the curve with less control point
-            for (int i = 0; i < 10; i++) //Let's try it 10 times
+            for (int i = -1; i < 10; i++) //Let's try it 10 times
             {
                 List<Point3d> Route = new List<Point3d>();
                 Route.Add(base_part_center);
 
                 //Add control points in between the start and end point, need to add at least one point
-                for (int j = 1; j < i + 2; j++)
+                if(i>=0)
                 {
-                    int subCurveNumbers = bestRoute_Point3d.Count / (i + 2);
-                    int index = j * subCurveNumbers;
+                    for (int j = 1; j < i + 2; j++)
+                    {
+                        int subCurveNumbers = bestRoute_Point3d.Count / (i + 2);
+                        int index = j * subCurveNumbers;
 
-                    if (index >= bestRoute_Point3d.Count)
-                        index = bestRoute_Point3d.Count - 1;
+                        if (index >= bestRoute_Point3d.Count)
+                            index = bestRoute_Point3d.Count - 1;
 
-                    Route.Add(bestRoute_Point3d[index]);
+                        Route.Add(bestRoute_Point3d[index]);
+                    }
                 }
+                
                 Route.Add(customized_part_center);
 
                 //Get the surface normal of customized_part_center and base_part_center
@@ -763,7 +774,7 @@ namespace MyUI
 
                 //Check if the Pipe is intersecting with other breps
                 Boolean isIntersected = false;
-                var allObjects = new List<RhinoObject>(myDoc.Objects.GetObjectList(ObjectType.AnyObject));
+                var allObjects = new List<RhinoObject>(myDoc.Objects.GetObjectList(ObjectType.Brep));
                 foreach (var item in allObjects)
                 {
                     Guid guid = item.Id;
