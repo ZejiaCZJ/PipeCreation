@@ -14,6 +14,11 @@ using Rhino.Collections;
 using Rhino.DocObjects.Tables;
 using Rhino.UI;
 using System.Threading.Tasks;
+using Alea;
+using ILGPU;
+using ILGPU.Runtime;
+using System.Collections.Concurrent;
+using System.Windows.Forms;
 
 namespace MyUI
 {
@@ -58,9 +63,11 @@ namespace MyUI
 
         public Index Index { get; set; }
 
+        public Vector3d vector { get; set; }
+
         public Voxel()
         {
-            X=0; Y=0; Z=0; Cost=0; Distance=0; isTaken = false;
+            X=0; Y=0; Z=0; Cost=0; Distance=0; isTaken = false; vector = Vector3d.Unset;
         }
         
         //This function set the distance with Manhattan distance
@@ -124,7 +131,7 @@ namespace MyUI
             pcbWidth = 20;
             pcbHeight = 20;
             pipeRadius = 3.5;
-            voxelSpace_offset = 0; //Each voxel is now stands for (offset+1)*(offset+1)*(offset+1)
+            voxelSpace_offset = 1; //Each voxel is now stands for 1/voxelSpace, 1/voxelSpace, 1/voxelSpace
 
 
             int solidIndex = myDoc.Materials.Add();
@@ -238,28 +245,28 @@ namespace MyUI
             GetVoxelSpace(customized_part, currModel);
 
             //Find the Pipe exit location
-            if(pipeExitPts.Count == 0)
+            if (pipeExitPts.Count == 0)
                 GetPipeExits(base_part_center, currModel);
 
             Point3d pipeExit = new Point3d();
             foreach (var item in pipeExitPts)
             {
-                if(item.isTaken == false)
+                if (item.isTaken == false)
                 {
                     pipeExit = item.location;
                     item.isTaken = true;
                     break;
                 }
             }
-            
+
 
 
             Point3d point = new Point3d(voxelSpace[10, 10, 10].X, voxelSpace[10, 10, 10].Y, voxelSpace[10, 10, 10].Z);
             //myDoc.Objects.AddPoint(point);
             //myDoc.Views.Redraw();
-            
-            Curve bestRoute = FindShortestPath(customized_part_center, pipeExit, customized_part,currModel);
-            
+
+            Curve bestRoute = FindShortestPath(customized_part_center, pipeExit, customized_part, currModel);
+
             #region Create Pipes
             //Cut the first 5mm of the bestRoute to generate the inner pipe
             //Double[] divisionParameters = bestRoute.DivideByLength(5, true, out Point3d[] points);
@@ -297,15 +304,15 @@ namespace MyUI
 
             //Show the new current model that lost the pipe portions only when the user is finished editing the model
             Boolean finish = true;
-            foreach(var exit in pipeExitPts)
+            foreach (var exit in pipeExitPts)
             {
-                if(exit.isTaken == false)
+                if (exit.isTaken == false)
                 {
                     finish = false; break;
                 }
             }
 
-            if(finish)
+            if (finish)
             {
                 List<Brep> firstSet = new List<Brep>();
                 firstSet.Add(currModel);
@@ -335,7 +342,7 @@ namespace MyUI
 
             myDoc.Views.Redraw();
             #endregion
-            
+
         }
 
         private void GetPipeExits(Point3d base_part_center, Brep currModel)
@@ -359,6 +366,42 @@ namespace MyUI
             pipeExitPts.Add(rightUpperCorner);
             pipeExitPts.Add(leftLowerCorner);
             pipeExitPts.Add(rightLowerCorner);
+        }
+
+        private void Quicksort(Point3d[] arr, int left, int right)
+        {
+            if (left < right)
+            {
+                int pivotIndex = Partition(arr, left, right);
+
+                Quicksort(arr, left, pivotIndex - 1);
+                Quicksort(arr, pivotIndex + 1, right);
+            }
+        }
+
+        private int Partition(Point3d[] arr, int left, int right)
+        {
+            Point3d pivot = arr[right];
+            int i = left - 1;
+
+            for (int j = left; j < right; j++)
+            {
+                if (arr[j].Z < pivot.Z)
+                {
+                    i++;
+                    Swap(arr, i, j);
+                }
+            }
+
+            Swap(arr, i + 1, right);
+            return i + 1;
+        }
+
+        private void Swap(Point3d[] arr, int i, int j)
+        {
+            Point3d temp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = temp;
         }
 
         private void GetVoxelSpace(Brep customized_part, Brep currModel)
@@ -390,66 +433,129 @@ namespace MyUI
 
             BoundingBox boundingBox = currModel.GetBoundingBox(true);
 
-            int w = (int)Math.Abs(boundingBox.Max.X - boundingBox.Min.X) / (voxelSpace_offset + 1); //width
-            int l = (int)Math.Abs(boundingBox.Max.Y - boundingBox.Min.Y) / (voxelSpace_offset + 1); //length
-            int h = (int)Math.Abs(boundingBox.Max.Z - boundingBox.Min.Z) / (voxelSpace_offset + 1); //height
+            int w = (int)Math.Abs(boundingBox.Max.X - boundingBox.Min.X) * voxelSpace_offset; //width
+            int l = (int)Math.Abs(boundingBox.Max.Y - boundingBox.Min.Y) * voxelSpace_offset; //length
+            int h = (int)Math.Abs(boundingBox.Max.Z - boundingBox.Min.Z) * voxelSpace_offset; //height
 
             
 
             voxelSpace = new Voxel[w, l, h];
+
+            double offset_spacer = 1 / voxelSpace_offset;
 
             #region Initialize the voxel space element-wise
             Parallel.For(0, w, i =>
             {
                 for (int j = 0; j < l; j++)
                 {
+                    double baseX = i + boundingBox.Min.X;
+                    double baseY = j + boundingBox.Min.Y;
+
+
+                    Point3d basePoint = new Point3d(baseX, baseY, boundingBox.Min.Z - 1);
+                    Point3d topPoint = new Point3d(baseX, baseY, boundingBox.Max.Z + 1);
+                    Curve intersector = (new Line(basePoint, topPoint)).ToNurbsCurve();
+                    int num_region = 0;
+                    if(Intersection.CurveBrep(intersector, currModel, myDoc.ModelAbsoluteTolerance, out Curve[] overlapCurves, out Point3d[] intersectionPoints))
+                    {
+                        num_region = intersectionPoints.Length % 2;
+                    }
+                    
+                    //Fix cases where the intersector intersect the brep at an edge
+                    if (intersectionPoints != null && intersectionPoints.Length > 1)
+                    {
+                        Point3dList hit_points = new Point3dList(intersectionPoints);
+                        hit_points.Sort();
+                        Point3d hit = hit_points.Last();
+                        List<Point3d> toRemoved_hit_points = new List<Point3d>();
+                        for(int p = hit_points.Count - 2; p >= 0; p--)
+                        {
+                            if (hit_points[p].DistanceTo(hit) < myDoc.ModelAbsoluteTolerance)
+                            {
+                                toRemoved_hit_points.Add(hit);
+                                toRemoved_hit_points.Add(hit_points[p]);
+                            }
+                            else
+                                hit = hit_points[p];
+                        }
+                        foreach(var replicate in toRemoved_hit_points)
+                            hit_points.Remove(replicate);
+                        intersectionPoints = hit_points.ToArray();
+                        Quicksort(intersectionPoints, 0, intersectionPoints.Length - 1);
+                    }
+
                     for (int k = 0; k < h; k++)
                     {
-                        Point3d currentPt = new Point3d((voxelSpace_offset + 1) * i + boundingBox.Min.X, (voxelSpace_offset + 1) * j + boundingBox.Min.Y, (voxelSpace_offset + 1) * k + boundingBox.Min.Z);
+                        double currentZ = offset_spacer * k + boundingBox.Min.Z;
+                        Point3d currentPt = new Point3d(baseX, baseY, currentZ);
                         voxelSpace[i, j, k] = new Voxel
                         {
-                            X = (voxelSpace_offset + 1) * i + boundingBox.Min.X,
-                            Y = (voxelSpace_offset + 1) * j + boundingBox.Min.Y,
-                            Z = (voxelSpace_offset + 1) * k + boundingBox.Min.Z,
-                            isTaken = !currModel.IsPointInside(currentPt, myDoc.ModelAbsoluteTolerance, true),
-                            Index = new Index(i, j, k)
+                            X = baseX,
+                            Y = baseY,
+                            Z = currentZ,
+                            isTaken = true,
+                            Index = new Index(i, j, k),
+                            vector = new Vector3d(baseX, baseY, currentZ)
                         };
 
-                        //Traverse all objects in the Rhino View to check for intersection. 
-                        Boolean intersected = false;
-                        Double maximumDistance = 4;//TODO: Try different distance metric to get better result. Euclidean: Math.Sqrt(Math.Pow((voxelSpace_offset + 1), 2) * 3)
-
-                        foreach (var item in allObjects)
+                        //Check if the current point is in the current model
+                        if(num_region == 0)
                         {
-                            Guid guid = item.Id;
-                            ObjRef currObj = new ObjRef(guid);
-                            Brep brep = currObj.Brep();
-
-                            
-
-                            //See if the point is strictly inside of the brep
-                            if (brep != null)
+                            for (int r = 0; r < intersectionPoints.Length; r += 2)
                             {
-                                //Check if the current brep is the 3D model main body
-                                if (guid == customized_part_Guid || guid == currModel_Guid)
+                                if (currentZ < intersectionPoints[r + 1].Z && currentZ > intersectionPoints[r].Z)
                                 {
-                                    continue;
-                                }
-
-                                if (brep.IsPointInside(currentPt, myDoc.ModelAbsoluteTolerance, true))
-                                {
-                                    voxelSpace[i, j, k].isTaken = true;
-                                    break;
-                                }
-
-                                //See if the point is too close to the brep and will cause intersection after creating the pipe
-                                if (brep.ClosestPoint(currentPt).DistanceTo(currentPt) <= maximumDistance)
-                                {
-                                    voxelSpace[i, j, k].isTaken = true;
+                                    voxelSpace[i, j, k].isTaken = false;
                                     break;
                                 }
                             }
                         }
+                        else
+                        {
+                            voxelSpace[i, j, k].isTaken = !currModel.IsPointInside(currentPt, myDoc.ModelAbsoluteTolerance, true);
+                        }
+
+                       
+
+                        //Traverse all objects in the Rhino View to check for intersection. 
+                        Boolean intersected = false;
+                        Double maximumDistance = 3;//TODO: Try different distance metric to get better result. Euclidean: Math.Sqrt(Math.Pow((voxelSpace_offset + 1), 2) * 3)
+
+                        if(voxelSpace[i, j, k].isTaken == false)
+                        {
+                            foreach (var item in allObjects)
+                            {
+                                Guid guid = item.Id;
+                                ObjRef currObj = new ObjRef(guid);
+                                Brep brep = currObj.Brep();
+
+
+
+                                //See if the point is strictly inside of the brep
+                                if (brep != null)
+                                {
+                                    //Check if the current brep is the 3D model main body
+                                    if (guid == customized_part_Guid || guid == currModel_Guid)
+                                    {
+                                        continue;
+                                    }
+
+                                    if (brep.IsPointInside(currentPt, myDoc.ModelAbsoluteTolerance, true))
+                                    {
+                                        voxelSpace[i, j, k].isTaken = true;
+                                        break;
+                                    }
+
+                                    //See if the point is too close to the brep and will cause intersection after creating the pipe
+                                    if (brep.ClosestPoint(currentPt).DistanceTo(currentPt) <= maximumDistance)
+                                    {
+                                        voxelSpace[i, j, k].isTaken = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
                     }
                 }
             });
@@ -472,9 +578,9 @@ namespace MyUI
             double h = boundingBox.Max.Y - boundingBox.Min.Y; //length
             double l = boundingBox.Max.Z - boundingBox.Min.Z; //height
             
-            int estimated_i = (int)((point.X - boundingBox.Min.X) / (voxelSpace_offset + 1));
-            int estimated_j = (int)((point.Y - boundingBox.Min.Y) / (voxelSpace_offset + 1));
-            int estimated_k = (int)((point.Z - boundingBox.Min.Z) / (voxelSpace_offset + 1));
+            int estimated_i = (int)((point.X - boundingBox.Min.X) * voxelSpace_offset);
+            int estimated_j = (int)((point.Y - boundingBox.Min.Y) * voxelSpace_offset);
+            int estimated_k = (int)((point.Z - boundingBox.Min.Z) * voxelSpace_offset);
 
             if (estimated_i >= voxelSpace.GetLength(0))
                 estimated_i = voxelSpace.GetLength(0) - 1;
@@ -598,11 +704,11 @@ namespace MyUI
             Queue<Voxel> neighbors = new Queue<Voxel>();
 
             //up,down,left,right,front,back voxels of the current
-            for (int i = current.i - 1; i < current.i + 2; i++)
+            for (int i = current.i - 2; i < current.i + 3; i++)
             {
-                for (int j = current.j - 1; j < current.j + 2; j++)
+                for (int j = current.j - 2; j < current.j + 3; j++)
                 {
-                    for (int k = current.k - 1; k < current.k + 2; k++)
+                    for (int k = current.k - 2; k < current.k + 3; k++)
                     {
                         if (i < voxelSpace.GetLength(0) && j < voxelSpace.GetLength(1) && k < voxelSpace.GetLength(2) && i >= 0 && j >= 0 && k >= 0)
                         {
@@ -653,6 +759,12 @@ namespace MyUI
             return neighbors;
         }
 
+        private double angle_between(Vector3d v1, Vector3d v2)
+        {
+            return Math.Acos((v1 * v2) / (v1.Length * v2.Length)) * (180/Math.PI);
+        }
+        
+
         private Curve FindShortestPath(Point3d customized_part_center, Point3d base_part_center, Brep customized_part, Brep currModel)
         {
             Line temp = new Line();
@@ -696,6 +808,9 @@ namespace MyUI
             frontier.Enqueue(start, 0);
             Voxel current;
 
+            //double degreeFromStartToEnd = angle_between(start.vector, goal.vector);
+            Line straight_line = new Line(start.X,start.Y,start.Z,goal.X,goal.Y,goal.Z);
+
             while (frontier.Count != 0)
             {
                 current = frontier.Dequeue();
@@ -704,13 +819,31 @@ namespace MyUI
                 {
                     break;
                 }
-                foreach (Voxel next in GetNeighbors(current.Index, ref goal, ref voxelSpace))
+                //Parallel.ForEach(GetNeighbors(current.Index, ref goal, ref voxelSpace), next =>
+                //{
+                //    double new_cost = current.Cost + 1;
+                //    if (new_cost < next.Cost || !searchedVoxels.Contains(next))
+                //    {
+                //        next.Cost = new_cost;
+                //        //double degreeFromCurrentToNext = angle_between(start.vector, next.vector);
+                //        //double priority = (new_cost + next.GetDistance(goal.X, goal.Y, goal.Z) ) * Math.Abs(degreeFromStartToEnd - degreeFromCurrentToNext);
+                //        double distance = straight_line.DistanceTo(new Point3d(next.X, next.Y, next.Z), false);
+                //        double priority = new_cost + next.GetDistance(goal.X, goal.Y, goal.Z) + distance;
+                //        frontier.Enqueue(next, priority);
+                //        searchedVoxels.Add(next);
+                //        next.Parent = current;
+                //    }
+                //});
+                foreach(var next in GetNeighbors(current.Index, ref goal, ref voxelSpace))
                 {
                     double new_cost = current.Cost + 1;
                     if (new_cost < next.Cost || !searchedVoxels.Contains(next))
                     {
                         next.Cost = new_cost;
-                        double priority = new_cost + next.GetDistance(goal.X, goal.Y, goal.Z);
+                        //double degreeFromCurrentToNext = angle_between(start.vector, next.vector);
+                        //double priority = (new_cost + next.GetDistance(goal.X, goal.Y, goal.Z) ) * Math.Abs(degreeFromStartToEnd - degreeFromCurrentToNext);
+                        double distance = straight_line.DistanceTo(new Point3d(next.X, next.Y, next.Z), false);
+                        double priority = new_cost + next.GetDistance(goal.X, goal.Y, goal.Z) + distance;
                         frontier.Enqueue(next, priority);
                         searchedVoxels.Add(next);
                         next.Parent = current;
@@ -722,12 +855,38 @@ namespace MyUI
             #region Retrieve to get the searched best route
             Stack<Voxel> bestRoute_Voxel = new Stack<Voxel>();
             List<Point3d> bestRoute_Point3d = new List<Point3d>();
+            List<Point3d> interpolatedRoute_Point3d = new List<Point3d>();
 
             current = goal;
             while (current != start)
             {
+                Point3d currentPoint = new Point3d(current.X, current.Y, current.Z);
                 bestRoute_Voxel.Push(current);
-                bestRoute_Point3d.Add(new Point3d(current.X, current.Y, current.Z));
+                bestRoute_Point3d.Add(currentPoint);
+
+                //var allObjects = new List<RhinoObject>(myDoc.Objects.GetObjectList(ObjectType.Brep));
+                //foreach (var item in allObjects)
+                //{
+                //    Guid guid = item.Id;
+                //    ObjRef currObj = new ObjRef(guid);
+                //    Brep brep = currObj.Brep();
+
+                //    if (brep != null)
+                //    {
+                //        //Ignore the current model and customized part
+                //        if (brep.IsDuplicate(currModel, myDoc.ModelAbsoluteTolerance) || brep.IsDuplicate(customized_part, myDoc.ModelAbsoluteTolerance))
+                //        {
+                //            continue;
+                //        }
+
+                //        //Check for intersection, go to the next brep if no intersection is founded, else, break and report intersection found
+                //        if (brep.ClosestPoint(currentPoint).DistanceToSquared(currentPoint) < 16)
+                //        {
+                //            interpolatedRoute_Point3d.Add(currentPoint);
+                //        }
+                //    }
+                //}
+
                 current = current.Parent;
                 current.isTaken = true;
             }
@@ -781,8 +940,6 @@ namespace MyUI
                     ObjRef currObj = new ObjRef(guid);
                     Brep brep = currObj.Brep();
 
-
-
                     if (brep != null)
                     {
                         //Ignore the current model and customized part
@@ -807,7 +964,6 @@ namespace MyUI
 
                 if (isIntersected)
                     continue;
-
 
                 return betterRoute;
             }
