@@ -113,6 +113,7 @@ namespace MyUI
         int voxelSpace_offset;
         ObjectAttributes solidAttribute, lightGuideAttribute, redAttribute, yellowAttribute, soluableAttribute;
         private static List<Brep> allPipes;
+        
 
         /// <summary>
         /// Initializes a new instance of the MyComponent1 class.
@@ -279,7 +280,7 @@ namespace MyUI
             lightGuidePipeRoute = lightGuidePipeRoute.Extend(CurveEnd.End, 100, CurveExtensionStyle.Line);
             soluablePipeRoute = soluablePipeRoute.Extend(CurveEnd.Start, 100, CurveExtensionStyle.Line);
 
-            Brep[] soluablePipe = Brep.CreatePipe(soluablePipeRoute, 2, true, PipeCapMode.Flat, true, myDoc.ModelAbsoluteTolerance, myDoc.ModelAngleToleranceRadians);
+            Brep[] soluablePipe = Brep.CreatePipe(soluablePipeRoute, 2, true, PipeCapMode.Flat, false, myDoc.ModelAbsoluteTolerance, myDoc.ModelAngleToleranceRadians);
             Brep[] lightGuidePipe = Brep.CreatePipe(lightGuidePipeRoute, 2, true, PipeCapMode.Flat, true, myDoc.ModelAbsoluteTolerance, myDoc.ModelAngleToleranceRadians);
 
             soluablePipe = Brep.CreateBooleanSplit(soluablePipe[0], currModel, myDoc.ModelAbsoluteTolerance);
@@ -345,6 +346,75 @@ namespace MyUI
 
         }
 
+        private BoundingBox GetOverlapBoundingBox(Brep brepA, Brep brepB)
+        {
+            BoundingBox bboxA = brepA.GetBoundingBox(true);
+            BoundingBox bboxB = brepB.GetBoundingBox(true);
+
+
+            // Calculate overlap region in X and Y dimensions
+            double xMin = Math.Max(bboxA.Min.X, bboxB.Min.X);
+            double xMax = Math.Min(bboxA.Max.X, bboxB.Max.X);
+            double yMin = Math.Max(bboxA.Min.Y, bboxB.Min.Y);
+            double yMax = Math.Min(bboxA.Max.Y, bboxB.Max.Y);
+
+            // Calculate overlap region in Z dimension
+            double zMin = Math.Max(bboxA.Min.Z, bboxB.Min.Z);
+            double zMax = Math.Min(bboxA.Max.Z, bboxB.Max.Z);
+
+            // Calculate the dimensions of the overlap box
+            double width = xMax - xMin;
+            double length = yMax - yMin;
+            double height = zMax - zMin;
+
+            // Create the overlapping bounding box
+            Point3d min = new Point3d(xMin, yMin, zMin);
+            Point3d max = new Point3d(xMin + width, yMin + length, zMax);
+            BoundingBox overlapBox = new BoundingBox(min, max);
+
+            return overlapBox;
+        }
+
+
+        private void CombineBreps(Brep customized_part, Brep currModel)
+        {
+            List<Brep> breps = new List<Brep>();
+            var allObjects = new List<RhinoObject>(myDoc.Objects.GetObjectList(ObjectType.Brep));
+            foreach (var item in allObjects)
+            {
+                Guid guid = item.Id;
+                ObjRef currObj = new ObjRef(guid);
+                Brep brep = currObj.Brep();
+
+                if (brep != null)
+                {
+                    //Ignore the current model and customized part
+                    if (brep.IsDuplicate(currModel, myDoc.ModelAbsoluteTolerance) || brep.IsDuplicate(customized_part, myDoc.ModelAbsoluteTolerance) || allPipes.Any(pipeBrep => brep.IsDuplicate(pipeBrep, myDoc.ModelAbsoluteTolerance)))
+                    {
+                        continue;
+                    }
+                    breps.Add(brep);
+                }
+            }
+
+            Quicksort(breps, 0, breps.Count - 1);
+
+            for(int i = breps.Count-2; i >= 0; i--)
+            {
+                BoundingBox overlapBox;
+                if (breps[i].GetBoundingBox(true).Min.Z < breps[i+1].GetBoundingBox(true).Min.Z)
+                {
+                    overlapBox = GetOverlapBoundingBox(breps[i], breps[i + 1]);
+                    myDoc.Objects.Add(overlapBox.ToBrep());
+                }
+            }
+
+
+
+        }
+
+        
+
         private void GetPipeExits(Point3d base_part_center, Brep currModel)
         {
             BoundingBox boundingBox = currModel.GetBoundingBox(true);
@@ -368,6 +438,7 @@ namespace MyUI
             pipeExitPts.Add(rightLowerCorner);
         }
 
+        
         private void Quicksort(Point3d[] arr, int left, int right)
         {
             if (left < right)
@@ -403,6 +474,44 @@ namespace MyUI
             arr[i] = arr[j];
             arr[j] = temp;
         }
+
+        private void Quicksort(List<Brep> arr, int left, int right)
+        {
+            if (left < right)
+            {
+                int pivotIndex = Partition(arr, left, right);
+
+                Quicksort(arr, left, pivotIndex - 1);
+                Quicksort(arr, pivotIndex + 1, right);
+            }
+        }
+
+        private int Partition(List<Brep> arr, int left, int right)
+        {
+            Brep pivot = arr[right];
+            int i = left - 1;
+
+            for (int j = left; j < right; j++)
+            {
+                if (arr[j].GetBoundingBox(true).Center.Z < pivot.GetBoundingBox(true).Center.Z)
+                {
+                    i++;
+                    Swap(arr, i, j);
+                }
+            }
+
+            Swap(arr, i + 1, right);
+            return i + 1;
+        }
+
+        private void Swap(List<Brep> arr, int i, int j)
+        {
+            Brep temp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = temp;
+        }
+
+        
 
         private void GetVoxelSpace(Brep customized_part, Brep currModel)
         {
@@ -720,7 +829,6 @@ namespace MyUI
                     }
                 }
             }
-            // && voxelSpace[i,j,k].isTaken == false
             #endregion
 
             #region Get direct neighbors only
@@ -783,8 +891,6 @@ namespace MyUI
             Voxel start = voxelSpace[customized_part_center_index.i, customized_part_center_index.j, customized_part_center_index.k];
             Voxel goal = voxelSpace[base_part_center_index.i, base_part_center_index.j, base_part_center_index.k];
 
-            //myDoc.Objects.AddPoint(new Point3d(start.X, start.Y, start.Z));
-
             start.Cost = 0; //TODO: Start is null, please FIX
             start.Distance = 0;
             start.SetDistance(goal.X, goal.Y, goal.Z);
@@ -808,7 +914,6 @@ namespace MyUI
             frontier.Enqueue(start, 0);
             Voxel current;
 
-            //double degreeFromStartToEnd = angle_between(start.vector, goal.vector);
             Line straight_line = new Line(start.X,start.Y,start.Z,goal.X,goal.Y,goal.Z);
 
             while (frontier.Count != 0)
@@ -819,29 +924,13 @@ namespace MyUI
                 {
                     break;
                 }
-                //Parallel.ForEach(GetNeighbors(current.Index, ref goal, ref voxelSpace), next =>
-                //{
-                //    double new_cost = current.Cost + 1;
-                //    if (new_cost < next.Cost || !searchedVoxels.Contains(next))
-                //    {
-                //        next.Cost = new_cost;
-                //        //double degreeFromCurrentToNext = angle_between(start.vector, next.vector);
-                //        //double priority = (new_cost + next.GetDistance(goal.X, goal.Y, goal.Z) ) * Math.Abs(degreeFromStartToEnd - degreeFromCurrentToNext);
-                //        double distance = straight_line.DistanceTo(new Point3d(next.X, next.Y, next.Z), false);
-                //        double priority = new_cost + next.GetDistance(goal.X, goal.Y, goal.Z) + distance;
-                //        frontier.Enqueue(next, priority);
-                //        searchedVoxels.Add(next);
-                //        next.Parent = current;
-                //    }
-                //});
+
                 foreach(var next in GetNeighbors(current.Index, ref goal, ref voxelSpace))
                 {
                     double new_cost = current.Cost + 1;
                     if (new_cost < next.Cost || !searchedVoxels.Contains(next))
                     {
                         next.Cost = new_cost;
-                        //double degreeFromCurrentToNext = angle_between(start.vector, next.vector);
-                        //double priority = (new_cost + next.GetDistance(goal.X, goal.Y, goal.Z) ) * Math.Abs(degreeFromStartToEnd - degreeFromCurrentToNext);
                         double distance = straight_line.DistanceTo(new Point3d(next.X, next.Y, next.Z), false);
                         double priority = new_cost + next.GetDistance(goal.X, goal.Y, goal.Z) + distance;
                         frontier.Enqueue(next, priority);
@@ -855,7 +944,7 @@ namespace MyUI
             #region Retrieve to get the searched best route
             Stack<Voxel> bestRoute_Voxel = new Stack<Voxel>();
             List<Point3d> bestRoute_Point3d = new List<Point3d>();
-            List<Point3d> interpolatedRoute_Point3d = new List<Point3d>();
+            
 
             current = goal;
             while (current != start)
@@ -863,30 +952,6 @@ namespace MyUI
                 Point3d currentPoint = new Point3d(current.X, current.Y, current.Z);
                 bestRoute_Voxel.Push(current);
                 bestRoute_Point3d.Add(currentPoint);
-
-                //var allObjects = new List<RhinoObject>(myDoc.Objects.GetObjectList(ObjectType.Brep));
-                //foreach (var item in allObjects)
-                //{
-                //    Guid guid = item.Id;
-                //    ObjRef currObj = new ObjRef(guid);
-                //    Brep brep = currObj.Brep();
-
-                //    if (brep != null)
-                //    {
-                //        //Ignore the current model and customized part
-                //        if (brep.IsDuplicate(currModel, myDoc.ModelAbsoluteTolerance) || brep.IsDuplicate(customized_part, myDoc.ModelAbsoluteTolerance))
-                //        {
-                //            continue;
-                //        }
-
-                //        //Check for intersection, go to the next brep if no intersection is founded, else, break and report intersection found
-                //        if (brep.ClosestPoint(currentPoint).DistanceToSquared(currentPoint) < 16)
-                //        {
-                //            interpolatedRoute_Point3d.Add(currentPoint);
-                //        }
-                //    }
-                //}
-
                 current = current.Parent;
                 current.isTaken = true;
             }
@@ -902,37 +967,31 @@ namespace MyUI
                 myDoc.Objects.AddPoint(bestRoute_Point3d[i]);
             });
 
-            //Test curve with less control points, if it's not causing intersection, then return the curve with less control point
-            for (int i = -1; i < 10; i++) //Let's try it 10 times
+            #region Use the result of A* to generate routes that are less curvy
+
+            #region Method 1: Retrive route from the start to the end, it checks if the pipe generated by the straight line from current point to end point is not causing intersection
+            List<Point3d> interpolatedRoute_Point3d = new List<Point3d>();
+            interpolatedRoute_Point3d.Add(bestRoute_Point3d[0]);
+
+            Boolean isIntersected = false;
+            int index = 1;
+            while(isIntersected == true || !interpolatedRoute_Point3d[interpolatedRoute_Point3d.Count - 1].Equals(bestRoute_Point3d[bestRoute_Point3d.Count - 1]))
             {
-                List<Point3d> Route = new List<Point3d>();
-                Route.Add(base_part_center);
+                Point3d endPoint = bestRoute_Point3d[bestRoute_Point3d.Count - index];
+                //Create a pipe for the current section of the line
+                Curve betterRoute = (new Line(interpolatedRoute_Point3d[interpolatedRoute_Point3d.Count - 1], endPoint)).ToNurbsCurve();
 
-                //Add control points in between the start and end point, need to add at least one point
-                if(i>=0)
+                if(betterRoute == null)
                 {
-                    for (int j = 1; j < i + 2; j++)
-                    {
-                        int subCurveNumbers = bestRoute_Point3d.Count / (i + 2);
-                        int index = j * subCurveNumbers;
-
-                        if (index >= bestRoute_Point3d.Count)
-                            index = bestRoute_Point3d.Count - 1;
-
-                        Route.Add(bestRoute_Point3d[index]);
-                    }
+                    interpolatedRoute_Point3d.Add(bestRoute_Point3d[bestRoute_Point3d.Count - index + 1]);
+                    index = 1;
+                    isIntersected = false;
+                    continue;
                 }
-                
-                Route.Add(customized_part_center);
-
-                //Get the surface normal of customized_part_center and base_part_center
-
-                Curve betterRoute = Curve.CreateControlPointCurve(Route, 3);
-
                 Brep[] pipe = Brep.CreatePipe(betterRoute, 3.5, true, PipeCapMode.Flat, true, myDoc.ModelAbsoluteTolerance, myDoc.ModelAngleToleranceRadians);
 
+
                 //Check if the Pipe is intersecting with other breps
-                Boolean isIntersected = false;
                 var allObjects = new List<RhinoObject>(myDoc.Objects.GetObjectList(ObjectType.Brep));
                 foreach (var item in allObjects)
                 {
@@ -952,21 +1011,107 @@ namespace MyUI
                         if (Intersection.BrepBrep(brep, pipe[0], myDoc.ModelAbsoluteTolerance, out Curve[] intersectionCurves, out Point3d[] intersectionPoints))
                         {
                             if (intersectionCurves.Length == 0 && intersectionPoints.Length == 0)
+                            {
+                                isIntersected = false;
                                 continue;
+                            }
                             else
                             {
                                 isIntersected = true;
+                                index += 1;
                                 break;
                             }
                         }
                     }
                 }
 
-                if (isIntersected)
+                if(isIntersected)
+                {
                     continue;
+                }
 
-                return betterRoute;
+                interpolatedRoute_Point3d.Add(endPoint);
+                index = 1;
             }
+
+            Curve ans = Curve.CreateInterpolatedCurve(interpolatedRoute_Point3d, 1);
+            return ans;
+
+
+
+            #endregion
+
+
+            #region Method 2: Test curve with less control points, if it's not causing intersection, then return the curve with less control point
+            //for (int i = -1; i < 10; i++) //Let's try it 10 times
+            //{
+            //    List<Point3d> Route = new List<Point3d>();
+            //    Route.Add(base_part_center);
+
+            //    //Add control points in between the start and end point, need to add at least one point
+            //    if (i >= 0)
+            //    {
+            //        for (int j = 1; j < i + 2; j++)
+            //        {
+            //            int subCurveNumbers = bestRoute_Point3d.Count / (i + 2);
+            //            int index = j * subCurveNumbers;
+
+            //            if (index >= bestRoute_Point3d.Count)
+            //                index = bestRoute_Point3d.Count - 1;
+
+            //            Route.Add(bestRoute_Point3d[index]);
+            //        }
+            //    }
+
+            //    Route.Add(customized_part_center);
+
+            //    //Get the surface normal of customized_part_center and base_part_center
+
+            //    Curve betterRoute = Curve.CreateControlPointCurve(Route, 3);
+
+            //    Brep[] pipe = Brep.CreatePipe(betterRoute, 3.5, true, PipeCapMode.Flat, true, myDoc.ModelAbsoluteTolerance, myDoc.ModelAngleToleranceRadians);
+
+            //    //Check if the Pipe is intersecting with other breps
+            //    Boolean isIntersected = false;
+            //    var allObjects = new List<RhinoObject>(myDoc.Objects.GetObjectList(ObjectType.Brep));
+            //    foreach (var item in allObjects)
+            //    {
+            //        Guid guid = item.Id;
+            //        ObjRef currObj = new ObjRef(guid);
+            //        Brep brep = currObj.Brep();
+
+            //        if (brep != null)
+            //        {
+            //            //Ignore the current model and customized part
+            //            if (brep.IsDuplicate(currModel, myDoc.ModelAbsoluteTolerance) || brep.IsDuplicate(customized_part, myDoc.ModelAbsoluteTolerance))
+            //            {
+            //                continue;
+            //            }
+
+            //            //Check for intersection, go to the next brep if no intersection is founded, else, break and report intersection found
+            //            if (Intersection.BrepBrep(brep, pipe[0], myDoc.ModelAbsoluteTolerance, out Curve[] intersectionCurves, out Point3d[] intersectionPoints))
+            //            {
+            //                if (intersectionCurves.Length == 0 && intersectionPoints.Length == 0)
+            //                    continue;
+            //                else
+            //                {
+            //                    isIntersected = true;
+            //                    break;
+            //                }
+            //            }
+            //        }
+            //    }
+
+            //    if (isIntersected)
+            //        continue;
+
+            //    return betterRoute;
+            //}
+            #endregion
+            #endregion
+
+
+
 
 
             Curve bestRoute = Curve.CreateControlPointCurve(bestRoute_Point3d, 3);
