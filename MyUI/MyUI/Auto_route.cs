@@ -908,7 +908,14 @@ namespace MyUI
             return neighbors;
         }
         
-
+        /// <summary>
+        /// This method finds the route from customized part to the pipe exit using A*
+        /// </summary>
+        /// <param name="customized_part_center">The customized part bounding box center</param>
+        /// <param name="base_part_center">The PCB part center</param>
+        /// <param name="customized_part">The actual Brep object of the customized part</param>
+        /// <param name="currModel">The current model that user wants to add pipe to</param>
+        /// <returns></returns>
         private List<Point3d> FindShortestPath(Point3d customized_part_center, Point3d base_part_center, Brep customized_part, Brep currModel)
         {
             Line temp = new Line();
